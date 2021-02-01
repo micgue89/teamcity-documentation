@@ -739,7 +739,7 @@ teamcity.http.proxyPort=8080
  
 ## If the proxy requires authentication, specify the login and password
 teamcity.http.proxyLogin=login
-teamcity.http.proxyPassword=password
+teamcity.http.proxyPassword=[password](git.md)
 ```
 
 
