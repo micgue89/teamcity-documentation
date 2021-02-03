@@ -37,7 +37,7 @@ Port
 
 <td>
 
-Specify the Perforce server address. The format is `host:port`. For specific environments, P4Host can be specified in the Workspace options [below](#checkout-on-agent-settings) for any type of checkout. 
+Specify the Perforce server address. The format is `host:port`. For specific environments, P4Host can be specified in the Workspace options [below](#perforceWorkspaceOptions) for any type of checkout. 
 
 
 </td></tr><tr>
@@ -56,7 +56,7 @@ Click this radio button to specify an existing Perforce stream. TeamCity will us
 TeamCity supports deeper directory structure within the root depot: depots with a depth of `//DEPOTNAME/1/2/n` can be specified in this field.    
 __Prior to TeamCity 2017.2__, TeamCity supports streams stored one level below the depot name: the format is `//streamdepot/streamname`.
 
-[Parameters](configuring-build-parameters.md) are supported. For the `StreamAtChange` option, use the [Label to checkout](#checkout-on-agent-settings) field.
+[Parameters](configuring-build-parameters.md) are supported. For the `StreamAtChange` option, use the [_Label to checkout_](#perforceLabelToCheckout) field.
 
 
 <note>
@@ -191,7 +191,8 @@ Check this option to enable ticket-based authentication. This option is enabled 
 <include src="vcs-checkout-rules.md" include-id="note-perforce-vcs"/>
 
 <anchor name="Perforce-perforceLabelToCheckout"/>
-<anchor name="checkout-on-agent-settings"/>
+
+<anchor name="agent-checkout-settings"/>
 
 ## Checkout on Agent Settings
 
@@ -339,7 +340,7 @@ If you need to check out sources not with the latest revision, but with a specif
 
 <warning>
 
-It is recommended to use the [agent-side checkout](vcs-checkout-mode.md#agent-checkout) if you use symbolic labels. With the server\-side checkout on label, TeamCity will perform full checkout.
+It is recommended to use the [agent-side checkout](vcs-checkout-mode.md#agent-checkout) if you use symbolic labels. With the server-side checkout on label, TeamCity will perform full checkout.
 </warning>
 
 
