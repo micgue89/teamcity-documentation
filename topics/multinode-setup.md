@@ -102,6 +102,8 @@ To define a new path to a local directory, use the `-Dteamcity.node.data.path` p
 
 To set up a high-availability TeamCity installation, you need to install both the main server and the secondary node behind a reverse proxy and configure it to route requests to the main server while it is available and to the secondary one in other cases. If you are about to set up the TeamCity server behind a reverse proxy for the first time, make sure to review our [notes](how-to.md#Proxy+Server+Setup) on this topic.
 
+#### Default Configuration
+
 The following [NGINX](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check) configuration will route requests to the secondary node only when the main server is unavailable or when the main server responds with the 503 status code (when starting or upgrading).
 
 ```Plain Text
@@ -121,9 +123,9 @@ http {
 
 ```
 
-Note that [NGINX Open Source](http://nginx.org/en/) does not support active [health checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/) (which is a better way to configure High Availability installation) and may experience DNS resolution issues. Consider using [NGINX Plus](https://www.nginx.com/products/nginx/) or [HA Proxy](http://www.haproxy.org/).
+Note that [NGINX Open Source](http://nginx.org/en/) does not support active [health checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/) (which is a better way to configure High Availability installation) and may experience DNS resolution issues. Consider using [NGINX Plus](https://www.nginx.com/products/nginx/) or [HAProxy](http://www.haproxy.org/).
 
-The HA Proxy configuration example:
+The HAProxy configuration example:
 
 ```Plain Text
 resolvers dns
@@ -143,12 +145,75 @@ backend tc-ha
    server tc_ro_node %TC_RO_NODE_URL:8111% backup check resolvers dns
 
 ```
+    
+>After configuring the proxy, remember to update the _Server URL_ on the __Administration | Global Settings__ page.
 
-<tip>
-    
-After configuring the proxy, remember to update the _Server URL_ on the __Administration | Global Settings__ page.
-    
-</tip>
+#### Alternative Configuration
+
+In terms of TeamCity EAP 2021.1, we have reworked the communication protocol between agents and secondary nodes. By default, an agent sends all its requests to the main node first, and the main node redirects these requests to a suitable secondary node. This way, if the main node becomes unavailable, the agent will not be able to communicate with its appointed secondary node, until the main node becomes available again. With the new approach, you can make this communication less dependent on the main server by appointing agents to the proxy instead. An agent will only need to access the main node when starting, and afterwards, it can connect through the proxy directly to the second node.
+
+This approach optimizes the communication between agents and nodes which helps establish a high-availability setup. To use it instead of the default one, you need to configure the proxy to route the traffic to secondary nodes based on a special HTTP header and cookie.
+
+The following HAProxy example shows what parameters are required to provide in the proxy configuration.
+
+>This example can be used for a reference only and not intended for production purposes.
+> 
+{type="warning"}
+
+```Plain Text
+
+defaults
+    mode http
+    timeout connect 60s
+    timeout client 60s
+    timeout server 60s
+
+    frontend http-in
+        bind *:80
+        default_backend web_endpoint
+        option httplog
+        log stdout local0  info
+
+        option http-buffer-request
+        declare capture request len 40000000
+        http-request capture req.body id 0
+        capture request header user-agent len 150
+        capture request header Host len 15
+
+        capture cookie X-TeamCity-Node-Id-Cookie= len 100 # specifying the cookie
+
+        http-request add-header X-TeamCity-Proxy "type=haproxy; version=2021.1" # specifying the package header
+
+        acl is_build_agent hdr_beg(User-Agent) -i "TeamCity Agent"
+
+        use_backend agents_endpoint if is_build_agent
+        use_backend web_endpoint unless is_build_agent # for web users' requests use the balanced endpoint
+
+
+    backend agents_endpoint
+        acl cookie_found req.cook(X-TeamCity-Node-Id-Cookie) -m found
+        # pass requests without cookie to the main node
+        # these are the commands and builds without the cookie
+        use-server MAIN_SERVER unless cookie_found
+        # parses the X-TeamCity-Node-Id-Cookie cookie from the request. Does not add if absent.
+        cookie X-TeamCity-Node-Id-Cookie
+        # last argument here is the cookie value that is the secondary node ID
+        server secondary_node <sec-host>:<sec-port> check cookie SecNodeID
+        server MAIN_SERVER <main-host>:<port> check cookie MAIN_SERVER
+
+
+    backend web_endpoint
+        balance first # choose the first available server
+        option httpchk GET /login.html HTTP/1.1 # \r\nHost:localhost
+        server web_main <sec-host>:<sec-port> check # set main node as the default server
+        server web_secondary <main-host>:<main-port> check # set the secondary node as backup if the main node is down
+```
+
+Here, `MAIN_SERVER` is the identifier of the main node; `secNodeID` must be set to the ID of a secondary server — you can add as many `server secondary_node ...` lines, as there are secondary servers in your setup.
+
+After configuring the proxy, remember to change the `serverURL` value to the proxy address in the agent's [`buildAgent.properties`](build-agent-configuration.md) file.
+
+>If you leave `serverURL` set to the main server URL, the agent will connect to the main node for every operation. This way, you can combine two approaches and control which agents connect to the proxy, and which ones — directly to the main server.
 
 ### Firewall Settings
 
