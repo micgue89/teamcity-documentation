@@ -148,11 +148,14 @@ backend tc-ha
     
 >After configuring the proxy, remember to update the _Server URL_ on the __Administration | Global Settings__ page.
 
-#### Alternative Configuration
+#### Proxy as Load Balancer
 
-In terms of TeamCity EAP 2021.1, we have reworked the communication protocol between agents and secondary nodes. By default, an agent sends all its requests to the main node first, and the main node redirects these requests to a suitable secondary node. This way, if the main node becomes unavailable, the agent will not be able to communicate with its appointed secondary node, until the main node becomes available again. With the new approach, you can make this communication less dependent on the main server by appointing agents to the proxy instead. An agent will only need to access the main node when starting, and afterwards, it can connect through the proxy directly to the second node.
+>This functionality is provided in terms of TeamCity Early Access Program 2021.1.
 
-This approach optimizes the communication between agents and nodes which helps establish a high-availability setup. To use it instead of the default one, you need to configure the proxy to route the traffic to secondary nodes based on a special HTTP header and cookie.
+In addition to its default role, your proxy server can serve as a load balancer and manage communication between TeamCity agents and secondary nodes. By default, an agent sends all its requests to the main node first, and the main node redirects these requests to a suitable secondary node. If the main node becomes unavailable, the agent will not be able to communicate with its appointed secondary node, until the main node becomes available again.   
+With the load balancer approach, you can make this communication less dependent on the main server by routing agents to the proxy instead. An agent will only need to access the main node when starting, and afterwards, it can connect through the proxy directly to the secondary node.
+
+This approach optimizes the communication between agents and nodes which helps establish a high-availability setup. To use it instead of the default one, you need to configure the proxy to route the agent traffic to secondary nodes based on a special HTTP header and cookie.
 
 The following HAProxy example shows what parameters are required to provide in the proxy configuration.
 
@@ -179,41 +182,47 @@ defaults
         http-request capture req.body id 0
         capture request header user-agent len 150
         capture request header Host len 15
+        
+        # specify the cookie:
+        capture cookie X-TeamCity-Node-Id-Cookie= len 100
 
-        capture cookie X-TeamCity-Node-Id-Cookie= len 100 # specifying the cookie
-
-        http-request add-header X-TeamCity-Proxy "type=haproxy; version=2021.1" # specifying the package header
+        # specify the package header:
+        http-request add-header X-TeamCity-Proxy "type=haproxy; version=2021.1"
 
         acl is_build_agent hdr_beg(User-Agent) -i "TeamCity Agent"
 
+        # for web users' requests use the balanced endpoint:
         use_backend agents_endpoint if is_build_agent
-        use_backend web_endpoint unless is_build_agent # for web users' requests use the balanced endpoint
+        use_backend web_endpoint unless is_build_agent
 
 
     backend agents_endpoint
         acl cookie_found req.cook(X-TeamCity-Node-Id-Cookie) -m found
-        # pass requests without cookie to the main node
-        # these are the commands and builds without the cookie
+        # pass requests without the cookie to the main node
+        # these are the commands and builds without the cookie:
         use-server MAIN_SERVER unless cookie_found
         # parses the X-TeamCity-Node-Id-Cookie cookie from the request. Does not add if absent.
         cookie X-TeamCity-Node-Id-Cookie
-        # last argument here is the cookie value that is the secondary node ID
+        # last argument is the cookie value that is the secondary node ID:
         server secondary_node <sec-host>:<sec-port> check cookie SecNodeID
         server MAIN_SERVER <main-host>:<port> check cookie MAIN_SERVER
 
 
     backend web_endpoint
-        balance first # choose the first available server
+        # choose the first available server:
+        balance first
         option httpchk GET /login.html HTTP/1.1 # \r\nHost:localhost
-        server web_main <sec-host>:<sec-port> check # set main node as the default server
-        server web_secondary <main-host>:<main-port> check # set the secondary node as backup if the main node is down
+        # set the main node as the default server:
+        server web_main <sec-host>:<sec-port> check
+        # set the secondary node as backup if the main node is down:
+        server web_secondary <main-host>:<main-port> check
 ```
 
-Here, `MAIN_SERVER` is the identifier of the main node; `secNodeID` must be set to the ID of a secondary server — you can add as many `server secondary_node ...` lines, as there are secondary servers in your setup.
+Here, `MAIN_SERVER` is the identifier of the main node; `secNodeID` must be set to the ID of a secondary node, as specified in __Administration | Nodes Configuration__. You can add as many `server secondary_node ...` lines as there are secondary nodes in your setup.
 
 After configuring the proxy, remember to change the `serverURL` value to the proxy address in the agent's [`buildAgent.properties`](build-agent-configuration.md) file.
 
->If you leave `serverURL` set to the main server URL, the agent will connect to the main node for every operation. This way, you can combine two approaches and control which agents connect to the proxy, and which ones — directly to the main server.
+>If you leave `serverURL` set to the main server URL, the agent will connect to the main node for every operation, as in the default scenario. This way, you can combine two approaches and control which agents connect to the proxy, and which ones — directly to the main server.
 
 ### Firewall Settings
 
